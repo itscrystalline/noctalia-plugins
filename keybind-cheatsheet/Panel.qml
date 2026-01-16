@@ -57,6 +57,10 @@ Item {
     columnItems = items;
   }
 
+  // Screen height limit (80% of screen)
+  property var panelOpenScreen: pluginApi?.panelOpenScreen
+  property real maxScreenHeight: panelOpenScreen ? panelOpenScreen.height * 0.8 : 800
+
   property real contentPreferredWidth: settingsWidth
   property real contentPreferredHeight: calculateDynamicHeight()
   readonly property var geometryPlaceholder: panelContainer
@@ -68,12 +72,12 @@ Item {
   property bool isLoading: false
 
   function calculateDynamicHeight() {
-    // If auto height is disabled, use manual height
+    // If auto height is disabled, use manual height (but still respect screen limit)
     if (!autoHeight && settingsHeight > 0) {
-      return settingsHeight;
+      return Math.min(settingsHeight, maxScreenHeight);
     }
 
-    if (categories.length === 0) return 400;
+    if (categories.length === 0) return Math.min(400, maxScreenHeight);
 
     var assignments = distributeCategories();
     var maxColumnHeight = 0;
@@ -101,7 +105,8 @@ Item {
 
     // header (45) + content + margins (16)
     var totalHeight = 45 + maxColumnHeight + 16;
-    return Math.max(300, Math.min(totalHeight, 1200));
+    // Limit to 80% of screen height
+    return Math.max(300, Math.min(totalHeight, maxScreenHeight));
   }
 
   // Flag to prevent re-parsing when settings are still loading
@@ -341,15 +346,21 @@ Item {
           var desc = descMatch ? descMatch[1] : (pluginApi?.tr("keybind-cheatsheet.panel.no-description") || "No description");
           var parts = line.split(',');
           if (parts.length >= 2) {
+            // Extract modifier part (between = and first comma)
             var bindPart = parts[0].trim();
+            var modMatch = bindPart.match(/=\s*(.*)$/);
+            var modPart = modMatch ? modMatch[1].trim().toUpperCase() : "";
             var keyPart = parts[1].trim();
-            var mod = "";
-            if (bindPart.includes("$mod")) mod = "Super";
-            if (bindPart.includes("SHIFT")) mod += (mod ? " + Shift" : "Shift");
-            if (bindPart.includes("CTRL")) mod += (mod ? " + Ctrl" : "Ctrl");
-            if (bindPart.includes("ALT")) mod += (mod ? " + Alt" : "Alt");
+
+            // Build modifiers list (avoid duplicates)
+            var mods = [];
+            if (modPart.includes("$MOD") || modPart.includes("SUPER")) mods.push("Super");
+            if (modPart.includes("SHIFT")) mods.push("Shift");
+            if (modPart.includes("CTRL") || modPart.includes("CONTROL")) mods.push("Ctrl");
+            if (modPart.includes("ALT")) mods.push("Alt");
+
             var key = formatSpecialKey(keyPart.toUpperCase());
-            var fullKey = mod + (mod && key ? " + " : "") + key;
+            var fullKey = mods.length > 0 ? mods.join(" + ") + " + " + key : key;
             currentCat.binds.push({ "keys": fullKey, "desc": desc });
           }
         }
@@ -650,34 +661,39 @@ Item {
       }
     }
 
-    RowLayout {
-      id: mainLayout
+    NScrollView {
+      id: scrollView
       visible: root.categories.length > 0 && !root.isLoading
       anchors.top: header.bottom
       anchors.bottom: parent.bottom
       anchors.left: parent.left
       anchors.right: parent.right
-      anchors.margins: Style.marginM
-      spacing: Style.marginS
+      anchors.margins: Style.marginS
+      clip: true
 
-      Repeater {
-        model: root.columnItems.length
+      RowLayout {
+        id: mainLayout
+        width: scrollView.width
+        spacing: Style.marginS
 
-        ColumnLayout {
-          Layout.fillWidth: true
-          Layout.fillHeight: true
-          Layout.alignment: Qt.AlignTop
-          spacing: 2
+        Repeater {
+          model: root.columnItems.length
 
-          property var colItems: root.columnItems[index] || []
+          ColumnLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
+            spacing: 2
 
-          Repeater {
-            model: colItems
-            Loader {
-              Layout.fillWidth: true
-              sourceComponent: modelData.type === "header" ? headerComponent :
-                             (modelData.type === "spacer" ? spacerComponent : bindComponent)
-              property var itemData: modelData
+            property var colItems: root.columnItems[index] || []
+
+            Repeater {
+              model: colItems
+              Loader {
+                Layout.fillWidth: true
+                sourceComponent: modelData.type === "header" ? headerComponent :
+                               (modelData.type === "spacer" ? spacerComponent : bindComponent)
+                property var itemData: modelData
+              }
             }
           }
         }
