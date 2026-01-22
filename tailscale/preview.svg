@@ -1,0 +1,33 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#1e1e2e"/>
+  
+  <!-- Title -->
+  <text x="400" y="50" font-family="sans-serif" font-size="32" font-weight="bold" fill="#cdd6f4" text-anchor="middle">Tailscale Status Plugin</text>
+  
+  <!-- Menu bar background -->
+  <rect x="100" y="150" width="600" height="60" rx="12" fill="#313244"/>
+  
+  <!-- Tailscale widget -->
+  <rect x="250" y="155" width="300" height="50" rx="10" fill="#45475a"/>
+  
+  <!-- Network icon -->
+  <circle cx="280" cy="180" r="12" fill="#89b4fa"/>
+  <path d="M280 168 L280 175 M280 185 L280 192 M268 180 L275 180 M285 180 L292 180" stroke="#1e1e2e" stroke-width="2"/>
+  
+  <!-- IP Address -->
+  <text x="310" y="185" font-family="monospace" font-size="14" fill="#cdd6f4">100.64.0.5</text>
+  
+  <!-- Peer count -->
+  <text x="440" y="185" font-family="monospace" font-size="14" fill="#a6adc8">(3)</text>
+  
+  <!-- Status indicator -->
+  <text x="400" y="280" font-family="sans-serif" font-size="24" fill="#a6e3a1" text-anchor="middle">Connected</text>
+  
+  <!-- Features -->
+  <text x="400" y="340" font-family="sans-serif" font-size="18" fill="#cdd6f4" text-anchor="middle">Features:</text>
+  <text x="400" y="380" font-family="sans-serif" font-size="14" fill="#a6adc8" text-anchor="middle">• Connection status indicator</text>
+  <text x="400" y="410" font-family="sans-serif" font-size="14" fill="#a6adc8" text-anchor="middle">• Show Tailscale IP address</text>
+  <text x="400" y="440" font-family="sans-serif" font-size="14" fill="#a6adc8" text-anchor="middle">• Display connected peer count</text>
+  <text x="400" y="470" font-family="sans-serif" font-size="14" fill="#a6adc8" text-anchor="middle">• Quick connect/disconnect toggle</text>
+  <text x="400" y="500" font-family="sans-serif" font-size="14" fill="#a6adc8" text-anchor="middle">• Configurable refresh interval</text>
+</svg>
