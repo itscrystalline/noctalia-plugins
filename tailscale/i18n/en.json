@@ -19,6 +19,9 @@
     "ping-count": "Ping Count",
     "ping-count-desc": "Number of ping packets to send when testing connectivity"
   },
+  "actions": {
+    "widget-settings": "Widget Settings"
+  },
   "context": {
     "connect": "Connect",
     "disconnect": "Disconnect",

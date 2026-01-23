@@ -98,7 +98,13 @@ ColumnLayout {
     label: pluginApi?.tr("settings.compact-mode") || "Compact Mode"
     description: pluginApi?.tr("settings.compact-mode-desc") || "Show only icon in the bar"
     checked: root.editCompactMode
-    onToggled: checked => root.editCompactMode = checked
+    onToggled: checked => {
+      root.editCompactMode = checked
+      if (checked) {
+        root.editShowIpAddress = false
+        root.editShowPeerCount = false
+      }
+    }
   }
 
   NToggle {
@@ -106,7 +112,15 @@ ColumnLayout {
     label: pluginApi?.tr("settings.show-ip") || "Show IP Address"
     description: pluginApi?.tr("settings.show-ip-desc") || "Display Tailscale IP in the bar widget"
     checked: root.editShowIpAddress
-    onToggled: checked => root.editShowIpAddress = checked
+    enabled: !root.editCompactMode
+    onToggled: checked => {
+      root.editShowIpAddress = checked
+      if (checked) {
+        root.editCompactMode = false
+      } else if (!checked && !root.editShowPeerCount) {
+        root.editCompactMode = true
+      }
+    }
   }
 
   NToggle {
@@ -114,7 +128,15 @@ ColumnLayout {
     label: pluginApi?.tr("settings.show-peers") || "Show Peer Count"
     description: pluginApi?.tr("settings.show-peers-desc") || "Display connected device count in the bar"
     checked: root.editShowPeerCount
-    onToggled: checked => root.editShowPeerCount = checked
+    enabled: !root.editCompactMode
+    onToggled: checked => {
+      root.editShowPeerCount = checked
+      if (checked) {
+        root.editCompactMode = false
+      } else if (!checked && !root.editShowIpAddress) {
+        root.editCompactMode = true
+      }
+    }
   }
 
   NToggle {
