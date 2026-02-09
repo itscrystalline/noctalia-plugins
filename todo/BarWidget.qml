@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
-import qs.Widgets
 import qs.Services.UI
+import qs.Widgets
 
 Item {
   id: root
@@ -13,6 +13,8 @@ Item {
   property ShellScreen screen
   property string widgetId: ""
   property string section: ""
+  property int sectionWidgetIndex: -1
+  property int sectionWidgetsCount: 0
 
   // Bar positioning properties
   readonly property string screenName: screen ? screen.name : ""
@@ -23,12 +25,19 @@ Item {
   readonly property real barFontSize: Style.getBarFontSizeForScreen(screenName)
 
   readonly property real contentWidth: root.isVertical ? root.capsuleHeight : horizontalRow.implicitWidth + Style.marginM * 2
-  readonly property real contentHeight: root.isVertical ? verticalColumn.implicitHeight + Style.marginM * 2 : root.capsuleHeight
+  readonly property real contentHeight: root.isVertical ? root.capsuleHeight : root.capsuleHeight
 
   readonly property int todoCount: getIntValue(pluginApi?.pluginSettings?.count, getIntValue(pluginApi?.manifest?.metadata?.defaultSettings?.count, 0))
   readonly property int completedCount: getIntValue(pluginApi?.pluginSettings?.completedCount, getIntValue(pluginApi?.manifest?.metadata?.defaultSettings?.completedCount, 0))
   readonly property int activeCount: todoCount - completedCount
   readonly property color contentColor: mouseArea.containsMouse ? Color.mOnHover : Color.mOnSurface
+
+  // Tooltip text for vertical mode
+  readonly property string tooltipText: {
+    var count = root.activeCount;
+    var key = count === 1 ? "bar_widget.todo_count_singular" : "bar_widget.todo_count_plural";
+    return pluginApi?.tr(key).replace("{count}", count);
+  }
 
   implicitWidth: contentWidth
   implicitHeight: contentHeight
@@ -83,7 +92,7 @@ Item {
 
       NIcon {
         anchors.horizontalCenter: parent.horizontalCenter
-        icon: "checklist"
+        icon: "clipboard-check"
         applyUiScale: false
         color: root.contentColor
       }
@@ -97,19 +106,44 @@ Item {
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
 
-    onPressed: function(mouse) {
-      if (mouse.button === Qt.RightButton) {
-        // Open settings on right click
-        if (pluginApi && pluginApi.manifest) {
-          Logger.i("Todo", "Opening plugin settings");
-          BarService.openPluginSettings(root.screen, pluginApi.manifest);
-        }
-      } else if (mouse.button === Qt.LeftButton) {
-        // Open panel on left click
+    onClicked: function (mouse) {
+      if (mouse.button === Qt.LeftButton) {
         if (pluginApi) {
           Logger.i("Todo", "Opening Todo panel");
-          pluginApi.openPanel(root.screen);
+          pluginApi.openPanel(root.screen, this);
         }
+      } else if (mouse.button === Qt.RightButton) {
+        PanelService.showContextMenu(contextMenu, root, screen);
+      }
+    }
+    onEntered: {
+      if (root.isVertical) {
+        TooltipService.show(root, tooltipText, BarService.getTooltipDirection(root.screen?.name));
+      }
+    }
+    onExited: {
+      TooltipService.hide();
+    }
+  }
+
+  // Right-click context menu
+  NPopupContextMenu {
+    id: contextMenu
+
+    model: [
+      {
+        "label": pluginApi?.tr("actions.widget_settings") || "Settings",
+        "action": "widget-settings",
+        "icon": "settings"
+      },
+    ]
+
+    onTriggered: action => {
+      contextMenu.close();
+      PanelService.closeContextMenu(screen);
+
+      if (action === "widget-settings") {
+        BarService.openPluginSettings(screen, pluginApi.manifest);
       }
     }
   }

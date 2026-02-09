@@ -1,13 +1,18 @@
 {
   "id": "github-feed",
   "name": "GitHub Feed",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "minNoctaliaVersion": "3.6.0",
   "author": "linuxmobile",
   "license": "MIT",
   "repository": "https://github.com/noctalia-dev/noctalia-plugins",
   "description": "Display GitHub activity from users you follow and activity on your repos",
-  "tags": ["Bar", "Panel", "Development", "Network"],
+  "tags": [
+    "Bar",
+    "Panel",
+    "Development",
+    "Network"
+  ],
   "entryPoints": {
     "main": "Main.qml",
     "barWidget": "BarWidget.qml",
@@ -21,6 +26,7 @@
     "defaultSettings": {
       "username": "",
       "token": "",
+      "githubUrl": "",
       "refreshInterval": 1800,
       "maxEvents": 50,
       "showStars": true,
@@ -29,7 +35,21 @@
       "showRepoCreations": true,
       "showMyRepoStars": true,
       "showMyRepoForks": true,
-      "openInBrowser": true
+      "showNotificationBadge": true,
+      "colorizationEnabled": false,
+      "colorizationIcon": "Primary",
+      "colorizationBadge": "Primary",
+      "colorizationBadgeText": "Primary",
+      "defaultTab": 0,
+      "openInBrowser": true,
+      "enableSystemNotifications": false,
+      "notifyGitHubNotifications": true,
+      "notifyStars": true,
+      "notifyForks": true,
+      "notifyPRs": true,
+      "notifyRepoCreations": true,
+      "notifyMyRepoStars": true,
+      "notifyMyRepoForks": true
     }
   }
 }

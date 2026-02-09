@@ -21,6 +21,9 @@ Item {
   property bool showEmptyState: false
   property bool detailsEditMode: false
 
+  // Reference to Main.qml instance for centralized data management
+  readonly property var mainInstance: pluginApi?.mainInstance
+
   // Define a function to schedule reloading of todos
   function scheduleReload() {
     Qt.callLater(loadTodos);
@@ -36,9 +39,7 @@ Item {
   Binding {
     target: root
     property: "showCompleted"
-    value: pluginApi?.pluginSettings?.showCompleted !== undefined
-         ? pluginApi.pluginSettings.showCompleted
-         : pluginApi?.manifest?.metadata?.defaultSettings?.showCompleted || false
+    value: pluginApi?.pluginSettings?.showCompleted !== undefined ? pluginApi.pluginSettings.showCompleted : pluginApi?.manifest?.metadata?.defaultSettings?.showCompleted || false
   }
 
   Binding {
@@ -107,6 +108,17 @@ Item {
             }
 
             NButton {
+              text: pluginApi?.tr("panel.header.export_button")
+              icon: "download"
+              fontSize: Style.fontSizeS
+              onClicked: {
+                if (mainInstance) {
+                  mainInstance.doExportTodos();
+                }
+              }
+            }
+
+            NButton {
               enabled: (pluginApi.pluginSettings.completedCount > 0)
               text: pluginApi?.tr("panel.header.clear_completed_button")
               icon: "trash"
@@ -162,7 +174,6 @@ Item {
             }
           }
 
-
           ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -181,7 +192,7 @@ Item {
               // Priority selector using a simplified approach
               Item {
                 Layout.preferredWidth: 120
-                Layout.preferredHeight: Style.baseWidgetSize
+                Layout.preferredHeight: Style.baseWidgetSize * 0.95
 
                 Rectangle {
                   anchors.fill: parent
@@ -265,6 +276,8 @@ Item {
 
               NIconButton {
                 icon: "plus"
+                baseSize: Style.baseWidgetSize * 1.2
+                customRadius: Style.iRadiusS
                 onClicked: {
                   addTodo();
                   priorityGroup.currentPriority = "medium"; // Reset to default after adding
@@ -308,15 +321,10 @@ Item {
                 }
 
                 function saveEdit() {
-                  if (pluginApi && todoTextEdit.text.trim() !== "") {
-                    var todos = pluginApi.pluginSettings.todos || [];
-
+                  if (mainInstance && todoTextEdit.text.trim() !== "") {
                     updateTodo(modelData.id, {
-                      text: todoTextEdit.text.trim()
-                    });
-
-                    pluginApi.pluginSettings.todos = pluginApi.pluginSettings.todos;
-                    pluginApi.saveSettings();
+                                 text: todoTextEdit.text.trim()
+                               });
                   }
                   editing = false;
                 }
@@ -331,9 +339,9 @@ Item {
 
                 // Watch for editing property changes to handle focus
                 onEditingChanged: {
-                    if (editing) {
-                        // Use a timer to delay the focus operation
-                        var timer = Qt.createQmlObject("
+                  if (editing) {
+                    // Use a timer to delay the focus operation
+                    var timer = Qt.createQmlObject("
                             import QtQuick 2.0;
                             Timer {
                                 interval: 50;
@@ -344,7 +352,7 @@ Item {
                                     }
                                 }
                             }", delegateItem);
-                    }
+                  }
                 }
 
                 // Position binding for non-dragging state
@@ -444,12 +452,20 @@ Item {
 
                         transitions: [
                           Transition {
-                            from: "*"; to: "hovered"
-                            NumberAnimation { properties: "opacity"; duration: 150 }
+                            from: "*"
+                            to: "hovered"
+                            NumberAnimation {
+                              properties: "opacity"
+                              duration: 150
+                            }
                           },
                           Transition {
-                            from: "hovered"; to: "*"
-                            NumberAnimation { properties: "opacity"; duration: 150 }
+                            from: "hovered"
+                            to: "*"
+                            NumberAnimation {
+                              properties: "opacity"
+                              duration: 150
+                            }
                           }
                         ]
                       }
@@ -464,32 +480,32 @@ Item {
                         z: 1000
 
                         onPressed: mouse => {
-                                      delegateItem.dragStartIndex = delegateItem.index;
-                                      delegateItem.dragTargetIndex = delegateItem.index;
-                                      delegateItem.dragStartY = delegateItem.y;
-                                      delegateItem.dragging = true;
-                                      delegateItem.z = 999;
+                                     delegateItem.dragStartIndex = delegateItem.index;
+                                     delegateItem.dragTargetIndex = delegateItem.index;
+                                     delegateItem.dragStartY = delegateItem.y;
+                                     delegateItem.dragging = true;
+                                     delegateItem.z = 999;
 
-                                      // Signal that interaction started (prevents panel close)
-                                      preventStealing = true;
-                                    }
+                                     // Signal that interaction started (prevents panel close)
+                                     preventStealing = true;
+                                   }
 
                         onPositionChanged: mouse => {
-                                              if (delegateItem.dragging) {
-                                                var dy = mouse.y - dragHandle.height / 2;
-                                                var newY = delegateItem.y + dy;
+                                             if (delegateItem.dragging) {
+                                               var dy = mouse.y - dragHandle.height / 2;
+                                               var newY = delegateItem.y + dy;
 
-                                                // Constrain within bounds
-                                                newY = Math.max(0, Math.min(newY, todoListView.contentHeight - delegateItem.height));
-                                                delegateItem.y = newY;
+                                               // Constrain within bounds
+                                               newY = Math.max(0, Math.min(newY, todoListView.contentHeight - delegateItem.height));
+                                               delegateItem.y = newY;
 
-                                                // Calculate target index (but don't apply yet)
-                                                var targetIndex = Math.floor((newY + delegateItem.height / 2) / (delegateItem.height + delegateItem.itemSpacing));
-                                                targetIndex = Math.max(0, Math.min(targetIndex, todoListView.count - 1));
+                                               // Calculate target index (but don't apply yet)
+                                               var targetIndex = Math.floor((newY + delegateItem.height / 2) / (delegateItem.height + delegateItem.itemSpacing));
+                                               targetIndex = Math.max(0, Math.min(targetIndex, todoListView.count - 1));
 
-                                                delegateItem.dragTargetIndex = targetIndex;
-                                              }
-                                            }
+                                               delegateItem.dragTargetIndex = targetIndex;
+                                             }
+                                           }
 
                         onReleased: {
                           // Apply the model change now that drag is complete
@@ -650,7 +666,7 @@ Item {
                           // Set focus when visible
                           onVisibleChanged: {
                             if (visible) {
-                              Qt.callLater(function() {
+                              Qt.callLater(function () {
                                 todoTextEdit.forceActiveFocus();
                               });
                             }
@@ -700,12 +716,20 @@ Item {
 
                               transitions: [
                                 Transition {
-                                  from: "*"; to: "hovered"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "*"
+                                  to: "hovered"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 },
                                 Transition {
-                                  from: "hovered"; to: "*"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "hovered"
+                                  to: "*"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 }
                               ]
                             }
@@ -780,12 +804,20 @@ Item {
 
                           transitions: [
                             Transition {
-                              from: "*"; to: "hovered"
-                              NumberAnimation { properties: "opacity"; duration: 150 }
+                              from: "*"
+                              to: "hovered"
+                              NumberAnimation {
+                                properties: "opacity"
+                                duration: 150
+                              }
                             },
                             Transition {
-                              from: "hovered"; to: "*"
-                              NumberAnimation { properties: "opacity"; duration: 150 }
+                              from: "hovered"
+                              to: "*"
+                              NumberAnimation {
+                                properties: "opacity"
+                                duration: 150
+                              }
                             }
                           ]
                         }
@@ -839,12 +871,20 @@ Item {
 
                               transitions: [
                                 Transition {
-                                  from: "*"; to: "hovered"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "*"
+                                  to: "hovered"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 },
                                 Transition {
-                                  from: "hovered"; to: "*"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "hovered"
+                                  to: "*"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 }
                               ]
                             }
@@ -887,12 +927,20 @@ Item {
 
                               transitions: [
                                 Transition {
-                                  from: "*"; to: "hovered"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "*"
+                                  to: "hovered"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 },
                                 Transition {
-                                  from: "hovered"; to: "*"
-                                  NumberAnimation { properties: "opacity"; duration: 150 }
+                                  from: "hovered"
+                                  to: "*"
+                                  NumberAnimation {
+                                    properties: "opacity"
+                                    duration: 150
+                                  }
                                 }
                               ]
                             }
@@ -961,12 +1009,20 @@ Item {
 
                         transitions: [
                           Transition {
-                            from: "*"; to: "hovered"
-                            NumberAnimation { properties: "opacity"; duration: 150 }
+                            from: "*"
+                            to: "hovered"
+                            NumberAnimation {
+                              properties: "opacity"
+                              duration: 150
+                            }
                           },
                           Transition {
-                            from: "hovered"; to: "*"
-                            NumberAnimation { properties: "opacity"; duration: 150 }
+                            from: "hovered"
+                            to: "*"
+                            NumberAnimation {
+                              properties: "opacity"
+                              duration: 150
+                            }
                           }
                         ]
                       }
@@ -1004,19 +1060,19 @@ Item {
     }
   }
 
-   // Dialog for displaying todo details
-   Popup {
-     id: detailDialog
+  // Dialog for displaying todo details
+  Popup {
+    id: detailDialog
 
-     property var todoId: 0
-     property string todoText: ""
-     property bool todoCompleted: false
-     property string todoCreatedAt: ""
-     property int todoPageId: 0
-      property string todoPriority: "medium"
-      property string todoDetails: ""
+    property var todoId: 0
+    property string todoText: ""
+    property bool todoCompleted: false
+    property string todoCreatedAt: ""
+    property int todoPageId: 0
+    property string todoPriority: "medium"
+    property string todoDetails: ""
 
-     x: (parent.width - width) / 2
+    x: (parent.width - width) / 2
     y: (parent.height - height) / 2
     width: 500 * Style.uiScaleRatio
     height: 300 * Style.uiScaleRatio
@@ -1099,110 +1155,109 @@ Item {
             Layout.fillWidth: true
           }
 
-            // Details section with add/edit button
-            ColumnLayout {
+          // Details section with add/edit button
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.marginS
+
+            // Divider before details
+            Rectangle {
+              height: 1
+              color: Color.mOutline
+              opacity: 0.3
+              Layout.fillWidth: true
+            }
+
+            // Label + Add/Edit button row
+            RowLayout {
               Layout.fillWidth: true
               spacing: Style.marginS
 
-              // Divider before details
-              Rectangle {
-                height: 1
-                color: Color.mOutline
-                opacity: 0.3
-                Layout.fillWidth: true
-              }
-
-              // Label + Add/Edit button row
-              RowLayout {
-                Layout.fillWidth: true
-                spacing: Style.marginS
-
-                NText {
-                  text: pluginApi?.tr("panel.todo_details.label_details")
-                  font.pointSize: Style.fontSizeS
-                  color: Color.mOnSurfaceVariant
-                  Layout.preferredWidth: 80 * Style.uiScaleRatio
-                  Layout.alignment: Qt.AlignVCenter
-                }
-
-                // Spacer to push button to the right
-                Item {
-                  Layout.fillWidth: true
-                }
-
-                NButton {
-                  text: detailDialog.todoDetails.length > 0 ?
-                        pluginApi?.tr("panel.todo_details.button_edit_details"):
-                        pluginApi?.tr("panel.todo_details.button_add_details")
-                  icon: "pencil"
-                  backgroundColor: Color.mSurfaceVariant
-                  textColor: Color.mOnSurface
-                  fontSize: Style.fontSizeS
-                  outlined: true
-                  onClicked: {
-                    detailsEditMode = true;
-                    Qt.callLater(function() {
-                      detailsTextArea.text = detailDialog.todoDetails;
-                      detailsTextArea.forceActiveFocus();
-                    });
-                  }
-                }
-              }
-
-              // View mode (show details if not empty)
               NText {
-                text: detailDialog.todoDetails
+                text: pluginApi?.tr("panel.todo_details.label_details")
                 font.pointSize: Style.fontSizeS
-                color: Color.mOnSurface
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-                visible: detailDialog.todoDetails.length > 0 && !detailsEditMode
+                color: Color.mOnSurfaceVariant
+                Layout.preferredWidth: 80 * Style.uiScaleRatio
+                Layout.alignment: Qt.AlignVCenter
               }
 
-              // Edit mode (TextArea)
-              TextArea {
-                id: detailsTextArea
-                visible: detailsEditMode
-                text: detailDialog.todoDetails
+              // Spacer to push button to the right
+              Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 100
-                wrapMode: TextArea.Wrap
-                color: Color.mOnSurface
-                background: Rectangle {
-                  color: Color.mSurfaceVariant
-                  radius: Style.iRadiusS
+              }
+
+              NButton {
+                text: detailDialog.todoDetails.length > 0 ? pluginApi?.tr("panel.todo_details.button_edit_details") : pluginApi?.tr("panel.todo_details.button_add_details")
+                icon: "pencil"
+                backgroundColor: Color.mSurfaceVariant
+                textColor: Color.mOnSurface
+                fontSize: Style.fontSizeS
+                outlined: true
+                onClicked: {
+                  detailsEditMode = true;
+                  Qt.callLater(function () {
+                    detailsTextArea.text = detailDialog.todoDetails;
+                    detailsTextArea.forceActiveFocus();
+                  });
                 }
-                Keys.onEscapePressed: {
+              }
+            }
+
+            // View mode (show details if not empty)
+            NText {
+              text: detailDialog.todoDetails
+              font.pointSize: Style.fontSizeS
+              color: Color.mOnSurface
+              wrapMode: Text.Wrap
+              Layout.fillWidth: true
+              visible: detailDialog.todoDetails.length > 0 && !detailsEditMode
+            }
+
+            // Edit mode (TextArea)
+            TextArea {
+              id: detailsTextArea
+              visible: detailsEditMode
+              text: detailDialog.todoDetails
+              Layout.fillWidth: true
+              Layout.preferredHeight: 100
+              wrapMode: TextArea.Wrap
+              color: Color.mOnSurface
+              background: Rectangle {
+                color: Color.mSurfaceVariant
+                radius: Style.iRadiusS
+              }
+              Keys.onEscapePressed: {
+                detailsEditMode = false;
+              }
+            }
+
+            // Save/Cancel buttons for details edit
+            RowLayout {
+              Layout.fillWidth: true
+              spacing: Style.marginS
+              visible: detailsEditMode
+
+              NButton {
+                text: pluginApi?.tr("panel.todo_details.button_save")
+                backgroundColor: Color.mPrimary
+                onClicked: {
+                  updateTodo(detailDialog.todoId, {
+                               details: detailsTextArea.text
+                             });
+                  detailDialog.todoDetails = detailsTextArea.text;
                   detailsEditMode = false;
                 }
               }
 
-              // Save/Cancel buttons for details edit
-              RowLayout {
-                Layout.fillWidth: true
-                spacing: Style.marginS
-                visible: detailsEditMode
-
-                NButton {
-                  text: pluginApi?.tr("panel.todo_details.button_save")
-                  backgroundColor: Color.mPrimary
-                  onClicked: {
-                    updateTodo(detailDialog.todoId, { details: detailsTextArea.text });
-                    pluginApi.saveSettings();
-                    detailDialog.todoDetails = detailsTextArea.text;
-                    detailsEditMode = false;
-                  }
-                }
-
-                NButton {
-                  text: pluginApi?.tr("panel.todo_details.button_cancel")
-                  backgroundColor: Color.mSurfaceVariant
-                  onClicked: {
-                    detailsEditMode = false;
-                  }
+              NButton {
+                text: pluginApi?.tr("panel.todo_details.button_cancel")
+                backgroundColor: Color.mSurfaceVariant
+                onClicked: {
+                  detailsEditMode = false;
                 }
               }
             }
+          }
 
           // Divider
           Rectangle {
@@ -1253,9 +1308,7 @@ Item {
               }
 
               NText {
-                text: detailDialog.todoCompleted ?
-                       pluginApi?.tr("panel.todo_details.status_completed") :
-                       pluginApi?.tr("panel.todo_details.status_pending")
+                text: detailDialog.todoCompleted ? pluginApi?.tr("panel.todo_details.status_completed") : pluginApi?.tr("panel.todo_details.status_pending")
                 font.pointSize: Style.fontSizeS
                 font.weight: Font.Medium
                 color: detailDialog.todoCompleted ? Color.mPrimary : Color.mError
@@ -1276,21 +1329,95 @@ Item {
                 Layout.alignment: Qt.AlignTop
               }
 
+              // Priority selector with H/M/L buttons
               RowLayout {
                 spacing: Style.marginXS
 
+                // High priority button
                 Rectangle {
-                  width: 12
-                  height: 12
-                  radius: 6
-                  color: root.getPriorityColor(detailDialog.todoPriority)
+                  width: 28
+                  height: 28
+                  radius: 4
+                  color: detailDialog.todoPriority === "high" ? getPriorityColor("high") : Qt.rgba(getPriorityColor("high").r, getPriorityColor("high").g, getPriorityColor("high").b, 0.2)
+                  border.color: detailDialog.todoPriority === "high" ? getPriorityColor("high") : "transparent"
+                  border.width: 2
+
+                  NText {
+                    anchors.centerIn: parent
+                    text: "H"
+                    color: detailDialog.todoPriority === "high" ? Color.mOnPrimary : getPriorityColor("high")
+                    font.pointSize: Style.fontSizeS
+                    font.weight: Font.Bold
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      updateTodo(detailDialog.todoId, {
+                                   priority: "high"
+                                 });
+                      detailDialog.todoPriority = "high";
+                    }
+                  }
                 }
 
-                NText {
-                  text: detailDialog.todoPriority.charAt(0).toUpperCase() + detailDialog.todoPriority.slice(1)
-                  font.pointSize: Style.fontSizeS
-                  font.weight: Font.Medium
-                  color: Color.mOnSurface
+                // Medium priority button
+                Rectangle {
+                  width: 28
+                  height: 28
+                  radius: 4
+                  color: detailDialog.todoPriority === "medium" ? getPriorityColor("medium") : Qt.rgba(getPriorityColor("medium").r, getPriorityColor("medium").g, getPriorityColor("medium").b, 0.2)
+                  border.color: detailDialog.todoPriority === "medium" ? getPriorityColor("medium") : "transparent"
+                  border.width: 2
+
+                  NText {
+                    anchors.centerIn: parent
+                    text: "M"
+                    color: detailDialog.todoPriority === "medium" ? Color.mOnPrimary : getPriorityColor("medium")
+                    font.pointSize: Style.fontSizeS
+                    font.weight: Font.Bold
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      updateTodo(detailDialog.todoId, {
+                                   priority: "medium"
+                                 });
+                      detailDialog.todoPriority = "medium";
+                    }
+                  }
+                }
+
+                // Low priority button
+                Rectangle {
+                  width: 28
+                  height: 28
+                  radius: 4
+                  color: detailDialog.todoPriority === "low" ? getPriorityColor("low") : Qt.rgba(getPriorityColor("low").r, getPriorityColor("low").g, getPriorityColor("low").b, 0.2)
+                  border.color: detailDialog.todoPriority === "low" ? getPriorityColor("low") : "transparent"
+                  border.width: 2
+
+                  NText {
+                    anchors.centerIn: parent
+                    text: "L"
+                    color: detailDialog.todoPriority === "low" ? Color.mOnPrimary : getPriorityColor("low")
+                    font.pointSize: Style.fontSizeS
+                    font.weight: Font.Bold
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      updateTodo(detailDialog.todoId, {
+                                   priority: "low"
+                                 });
+                      detailDialog.todoPriority = "low";
+                    }
+                  }
                 }
               }
             }
@@ -1325,289 +1452,69 @@ Item {
 
   function addTodo() {
     var text = newTodoInput.text.trim();
-    if (!text || !pluginApi) return;
+    if (!text || !mainInstance)
+      return;
 
-    var todos = pluginApi.pluginSettings.todos || [];
-    var currentPageId = pluginApi.pluginSettings.current_page_id || 0;
-
-    todos.unshift({
-      id: Date.now(),
-      text: text,
-      completed: false,
-      createdAt: new Date().toISOString(),
-      pageId: currentPageId,
-      priority: priorityGroup.currentPriority,
-      details: ""
-    });
-
-    pluginApi.pluginSettings.todos = todos;
-    pluginApi.pluginSettings.count = todos.length;
-    pluginApi.pluginSettings.completedCount = calculateCompletedCount();
-    pluginApi.saveSettings();
+    var currentPageId = pluginApi?.pluginSettings?.current_page_id || 0;
+    mainInstance.createTodo(text, priorityGroup.currentPriority, currentPageId);
     newTodoInput.text = "";
   }
 
   // Internal utility functions
   function updateTodo(todoId, updates) {
-    if (!pluginApi) return false;
-
-    var todos = pluginApi.pluginSettings.todos || [];
-    for (var i = 0; i < todos.length; i++) {
-      if (todos[i].id === todoId) {
-        if (updates.text !== undefined) todos[i].text = updates.text;
-        if (updates.completed !== undefined) todos[i].completed = updates.completed;
-        if (updates.priority !== undefined) todos[i].priority = updates.priority;
-        if (updates.details !== undefined) todos[i].details = updates.details;
-        return true;
-      }
-    }
-    return false;
+    if (!mainInstance)
+      return false;
+    return mainInstance.updateTodo(todoId, updates);
   }
 
   // Helper function to remove a todo by ID
   function removeTodo(todoId) {
-    if (!pluginApi) {
-      Logger.e("Todo", "pluginApi is null, cannot delete todo");
+    if (!mainInstance) {
+      Logger.e("Todo", "mainInstance is null, cannot delete todo");
       return false;
     }
-
-    var todos = pluginApi.pluginSettings.todos || [];
-    var indexToRemove = -1;
-
-    for (var i = 0; i < todos.length; i++) {
-      if (todos[i].id === todoId) {
-        indexToRemove = i;
-        break;
-      }
-    }
-
-    if (indexToRemove !== -1) {
-      todos.splice(indexToRemove, 1);
-
-      pluginApi.pluginSettings.count = todos.length;
-      pluginApi.pluginSettings.completedCount = calculateCompletedCount();
-
-      pluginApi.saveSettings();
-
-      return true;
-    } else {
-      Logger.e("Todo", "Todo with ID " + todoId + " not found for deletion");
-      return false;
-    }
+    return mainInstance.deleteTodo(todoId);
   }
 
   // Helper function to toggle todo completion status
   function toggleTodo(todoId, currentCompletedStatus) {
-    if (!pluginApi) {
-      Logger.e("Todo", "pluginApi is null, cannot toggle todo");
+    if (!mainInstance) {
+      Logger.e("Todo", "mainInstance is null, cannot toggle todo");
       return false;
     }
 
     // Use the existing updateTodo function to update only the completion status
-    var success = updateTodo(todoId, {
-      completed: !currentCompletedStatus
-    });
-
-    if (success) {
-      pluginApi.pluginSettings.completedCount = calculateCompletedCount();
-
-      moveTodoToCorrectPosition(todoId);
-
-      pluginApi.saveSettings();
-      return true;
-    } else {
-      Logger.e("Todo", "Failed to toggle todo with ID " + todoId);
-      return false;
-    }
+    return updateTodo(todoId, {
+                        completed: !currentCompletedStatus
+                      });
   }
 
   // Helper function to clear completed todos for the current page
   function clearCompletedTodos() {
-    if (!pluginApi) {
-      Logger.e("Todo", "pluginApi is null, cannot clear completed todos");
-      return false;
-    }
-
-    var todos = pluginApi.pluginSettings.todos || [];
-    var currentPageId = pluginApi.pluginSettings.current_page_id || 0;
-
-    // Only clear completed todos for the current page
-    var activeTodos = todos.filter(function(todo) {
-      return !(todo.completed && todo.pageId === currentPageId);
-    });
-
-    pluginApi.pluginSettings.todos = activeTodos;
-
-    // Update counts
-    pluginApi.pluginSettings.completedCount = calculateCompletedCount();
-    pluginApi.pluginSettings.count = activeTodos.length;
-
-    pluginApi.saveSettings();
-    return true;
-  }
-
-  function calculateCompletedCount() {
-    if (!pluginApi) return 0;
-
-    var todos = pluginApi.pluginSettings.todos || [];
-    var completedCount = 0;
-    for (var j = 0; j < todos.length; j++) {
-      if (todos[j].completed) {
-        completedCount++;
-      }
-    }
-    return completedCount;
-  }
-
-  function findPageIndexInTodos(pageTodos, targetItem) {
-    for (var i = 0; i < pageTodos.length; i++) {
-      if (pageTodos[i].id === targetItem.id) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function moveTodoItem(fromIndex, toIndex) {
-    if (fromIndex === toIndex)
-      return;
-
-    var currentPageId = pluginApi?.pluginSettings?.current_page_id || 0;
-    var pluginTodos = root.rawTodos;
-
-    // Filter todos for the current page
-    var pageTodos = pluginTodos.filter(function(todo) {
-      return todo.pageId === currentPageId;
-    });
-
-    if (fromIndex < 0 || fromIndex >= pageTodos.length)
-      return;
-    if (toIndex < 0 || toIndex >= pageTodos.length)
-      return;
-
-    // Create a copy of the full todos array
-    var newTodos = pluginTodos.slice();
-
-    // Find the item in the full array using the fromIndex from the pageTodos
-    var itemToMove = pageTodos[fromIndex];
-
-    // Find the index of this item in the full array
-    var fromGlobalIndex = -1;
-    for (var i = 0; i < newTodos.length; i++) {
-      if (newTodos[i].id === itemToMove.id) {
-        fromGlobalIndex = i;
-        break;
-      }
-    }
-
-    if (fromGlobalIndex === -1) return;
-
-    // Remove the item from its current position
-    var movedItem = newTodos.splice(fromGlobalIndex, 1)[0];
-
-    // Find the target position in the full array
-    var toGlobalIndex = -1;
-
-    // If moving down, we need to account for the item being removed
-    if (fromIndex < toIndex) {
-      // Adjust target index since we removed an item before the target
-      var adjustedPageIndex = toIndex;
-      var count = 0;
-      for (var i = 0; i < newTodos.length; i++) {
-        if (newTodos[i].pageId === currentPageId) {
-          if (count === adjustedPageIndex) {
-            toGlobalIndex = i;
-            break;
-          }
-          count++;
-        }
-      }
-    } else {
-      // Moving up, target position stays the same relative to global array
-      var count = 0;
-      for (var i = 0; i < newTodos.length; i++) {
-        if (newTodos[i].pageId === currentPageId) {
-          if (count === toIndex) {
-            toGlobalIndex = i;
-            break;
-          }
-          count++;
-        }
-      }
-    }
-
-    // Insert the item at the new position
-    if (toGlobalIndex === -1) {
-      // If target index is at the end of the page's items
-      var lastPageIndex = -1;
-      var count = 0;
-      for (var i = 0; i < newTodos.length; i++) {
-        if (newTodos[i].pageId === currentPageId) {
-          lastPageIndex = i;
-          count++;
-        }
-      }
-      if (count === toIndex + 1) {
-        toGlobalIndex = lastPageIndex + 1;
-      } else {
-        return;
-      }
-    }
-
-    newTodos.splice(toGlobalIndex, 0, movedItem);
-
-    // Update the plugin settings
-    if (pluginApi) {
-      pluginApi.pluginSettings.todos = newTodos;
-      pluginApi.saveSettings();
-    }
-  }
-
-  function moveTodoToCorrectPosition(todoId) {
-    if (!pluginApi) return;
-
-    var todos = pluginApi.pluginSettings.todos || [];
     var currentPageId = pluginApi?.pluginSettings?.current_page_id || 0;
 
-    var todoIndex = -1;
-    for (var i = 0; i < todos.length; i++) {
-      if (todos[i].id === todoId) {
-        todoIndex = i;
-        break;
+    // Get all todos (rawTodos is synced via Binding from pluginSettings)
+    var todos = root.rawTodos || [];
+    var removedCount = 0;
+
+    // Remove completed todos from current page
+    for (var i = todos.length - 1; i >= 0; i--) {
+      if (todos[i].completed && todos[i].pageId === currentPageId) {
+        mainInstance.deleteTodo(todos[i].id);
+        removedCount++;
       }
     }
 
-    if (todoIndex === -1) return;
+    return removedCount;
+  }
 
-    var movedTodo = todos[todoIndex];
-
-    // Only reorder if todo belongs to current page
-    if (movedTodo.pageId !== currentPageId) return;
-
-    todos.splice(todoIndex, 1);
-
-    if (movedTodo.completed) {
-      // Place completed items at the end of the page
-      var insertIndex = todos.length;
-      for (var j = todos.length - 1; j >= 0; j--) {
-        if (todos[j].pageId === currentPageId && todos[j].completed) {
-          insertIndex = j + 1;
-          break;
-        }
-      }
-      todos.splice(insertIndex, 0, movedTodo);
-    } else {
-      // Place uncompleted items at the beginning of the page
-      var insertIndex = 0;
-      for (; insertIndex < todos.length; insertIndex++) {
-        if (todos[insertIndex].pageId === currentPageId) {
-          if (todos[insertIndex].completed) break;
-        }
-      }
-      todos.splice(insertIndex, 0, movedTodo);
+  // Helper function to move todo by index (for drag reorder)
+  function moveTodoItem(fromIndex: int, toIndex: int) {
+    if (!mainInstance) {
+      Logger.e("Todo", "mainInstance is null, cannot move todo");
+      return;
     }
-
-    pluginApi.saveSettings();
+    mainInstance.moveTodoItem(fromIndex, toIndex);
   }
 
   // Helper function to get priority color
@@ -1635,8 +1542,10 @@ Item {
 
   // Helper function to get theme color
   function getThemeColor(priority) {
-    if (priority === "high") return Color.mError;
-    if (priority === "low") return Color.mOnSurfaceVariant;
+    if (priority === "high")
+      return Color.mError;
+    if (priority === "low")
+      return Color.mOnSurfaceVariant;
     return Color.mPrimary;
   }
 
@@ -1651,7 +1560,7 @@ Item {
     return "Unknown";
   }
 
-   // Function to open the detailed view for a todo item
+  // Function to open the detailed view for a todo item
   function openTodoDetails(todo) {
     detailsEditMode = false;
 
@@ -1701,7 +1610,7 @@ Item {
 
     // Restore the scroll position and visible item
     if (todoListView) {
-      Qt.callLater(function() {
+      Qt.callLater(function () {
         if (currentVisibleIndex >= 0 && currentVisibleIndex < filteredTodosModel.count) {
           todoListView.positionViewAtIndex(currentVisibleIndex, ListView.Beginning);
         } else if (currentScrollPos > 0) {
@@ -1715,7 +1624,7 @@ Item {
 
     // Restore the scroll position
     if (todoListView) {
-      Qt.callLater(function() {
+      Qt.callLater(function () {
         todoListView.contentY = currentScrollPos;
       });
     }
@@ -1723,5 +1632,4 @@ Item {
     // Check if the model is empty
     root.showEmptyState = (filteredTodosModel.count === 0);
   }
-
 }

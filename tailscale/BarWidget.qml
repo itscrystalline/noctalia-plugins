@@ -77,7 +77,7 @@ Item {
         // Peer count
         NText {
           visible: mainInstance?.showPeerCount ?? false
-          text: (mainInstance?.peerCount || 0) + " " + (pluginApi?.tr("panel.peers") || "peers")
+          text: (mainInstance?.peerCount || 0) + " " + pluginApi?.tr("panel.peers")
           pointSize: Style.fontSizeXS
           color: mouseArea.containsMouse ? Color.mOnHover : Color.mOnSurface
         }
@@ -90,15 +90,22 @@ Item {
 
     model: [
       {
-        "label": (mainInstance?.tailscaleRunning ?? false)
-          ? (pluginApi?.tr("context.disconnect") || "Disconnect")
-          : (pluginApi?.tr("context.connect") || "Connect"),
-        "action": "toggle-tailscale",
-        "icon": (mainInstance?.tailscaleRunning ?? false) ? "plug-x" : "plug",
-        "enabled": mainInstance?.tailscaleInstalled ?? false
+        "label": pluginApi?.tr("context.login"),
+        "action": "login",
+        "icon": "login",
+        "visible": mainInstance?.needsLogin ?? false
       },
       {
-        "label": pluginApi?.tr("actions.widget-settings") || "Widget Settings",
+        "label": (mainInstance?.tailscaleRunning ?? false)
+          ? pluginApi?.tr("context.disconnect")
+          : pluginApi?.tr("context.connect"),
+        "action": "toggle-tailscale",
+        "icon": (mainInstance?.tailscaleRunning ?? false) ? "plug-x" : "plug",
+        "enabled": mainInstance?.tailscaleInstalled ?? false,
+        "visible": !(mainInstance?.needsLogin ?? false)
+      },
+      {
+        "label": pluginApi?.tr("actions.widget-settings"),
         "action": "widget-settings",
         "icon": "settings"
       }
@@ -113,6 +120,10 @@ Item {
       } else if (action === "toggle-tailscale") {
         if (mainInstance) {
           mainInstance.toggleTailscale()
+        }
+      } else if (action === "login") {
+        if (mainInstance) {
+          mainInstance.loginTailscale()
         }
       }
     }

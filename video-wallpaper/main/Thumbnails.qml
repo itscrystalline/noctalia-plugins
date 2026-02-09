@@ -16,19 +16,21 @@ Item {
     /***************************
     * PROPERTIES
     ***************************/
-    readonly property string    currentWallpaper:   pluginApi.pluginSettings.currentWallpaper   || ""
-    readonly property bool      enabled:            pluginApi.pluginSettings.enabled            || false
-    readonly property bool      thumbCacheReady:    pluginApi.pluginSettings.thumbCacheReady    || false
-    readonly property string    wallpapersFolder:   pluginApi.pluginSettings.wallpapersFolder   || "~/Pictures/Wallpapers"
-
-    required property var getThumbPath
+    // Required properties
+    required property var    getThumbPath
     required property string thumbCacheFolderPath
 
     required property FolderModel folderModel
     required property FolderModel thumbFolderModel
 
+    // Global properties
+    readonly property bool   enabled:          pluginApi?.pluginSettings?.enabled          ?? false
+    readonly property bool   thumbCacheReady:  pluginApi?.pluginSettings?.thumbCacheReady  ?? false
+    readonly property string wallpapersFolder: pluginApi?.pluginSettings?.wallpapersFolder ?? pluginApi?.manifest?.metadata?.defaultSettings?.wallpapersFolder ?? ""
+
+    // Local properties
     property bool oldWallpapersSaved: false
-    property int _thumbGenIndex: 0
+    property int  _thumbGenIndex: 0
 
 
     /***************************
@@ -48,37 +50,12 @@ Item {
         }
     }
 
-
-    function startColorGen() {
-        // If the folder model isn't ready, or we are still regenerating a thumbnail, or the old wallpapers haven't saved yet, try in a bit
-        if(!thumbFolderModel.ready || startColorGenProc.running || !oldWallpapersSaved){
-            startColorGenTimer.restart();
-            return;
-        }
-
-        const thumbPath = root.getThumbPath(currentWallpaper);
-        if (thumbFolderModel.indexOf(thumbPath) !== -1) {
-            Logger.d("video-wallpaper", "Generating color scheme based on video wallpaper!");
-            WallpaperService.changeWallpaper(thumbPath);
-        } else {
-            // Try to create the thumbnail again
-            // just a fail safe if the current wallpaper isn't included in the wallpapers folder
-            Logger.d("video-wallpaper", "Thumbnail not found:", thumbPath);
-            startColorGenProc.command = ["sh", "-c", `ffmpeg -y -i ${currentWallpaper} -vframes:v 1 ${thumbPath}`]
-            startColorGenProc.running = true;
-            return;
-        }
-
-        // Reset the flag
-        oldWallpapersSaved = false;
-    }
-
     function thumbGeneration() {
         if(pluginApi == null) return;
 
         // Try to start in a bit since the folder models aren't ready yet
         if (!folderModel.ready || !thumbFolderModel.ready) {
-            thumbGenerationTimer.restart();
+            Qt.callLater(thumbGeneration);
             return;
         }
 
@@ -95,7 +72,7 @@ Item {
 
                 // With scale
                 //thumbProc.command = ["sh", "-c", `ffmpeg -y -i ${videoUrl} -vf "scale=1080:-1" -vframes:v 1 ${thumbUrl}`]
-                thumbGenerationProc.command = ["sh", "-c", `ffmpeg -y -i ${videoPath} -vframes:v 1 ${thumbPath}`]
+                thumbGenerationProc.command = ["sh", "-c", `ffmpeg -y -i "${videoPath}" -vf "scale=iw/2:-1, format=rgb24" -vframes:v 1 "${thumbPath}"`]
                 thumbGenerationProc.running = true;
                 return;
             }
@@ -122,10 +99,6 @@ Item {
     /***************************
     * EVENTS
     ***************************/
-    onCurrentWallpaperChanged: {
-        root.startColorGen();
-    }
-
     onWallpapersFolderChanged: {
         root.thumbGeneration();
     }
@@ -153,35 +126,9 @@ Item {
         id: thumbRegenerationProc
         onExited: {
             // Reload the thumbFolder first
+            root.folderModel.forceReload();
             root.thumbFolderModel.forceReload();
             root.thumbGeneration();
         }
-    }
-    
-    Timer {
-        id: thumbGenerationTimer
-        interval: 10
-        repeat: false
-        running: false
-        triggeredOnStart: false
-        onTriggered: root.thumbGeneration();
-    }
-
-
-    Process {
-        id: startColorGenProc
-        onExited: {
-            // When finished recreating the thumbnail, try to apply the colors again
-            root.startColorGen();
-        }
-    }
-
-    Timer {
-        id: startColorGenTimer
-        interval: 10
-        repeat: false
-        running: false
-        triggeredOnStart: false
-        onTriggered: root.startColorGen();
     }
 }

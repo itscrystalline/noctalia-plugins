@@ -26,6 +26,20 @@ Item {
 
     readonly property string username: pluginApi?.pluginSettings?.username || ""
     readonly property string token: pluginApi?.pluginSettings?.token || ""
+    readonly property string githubUrl: pluginApi?.pluginSettings?.githubUrl || ""
+
+    // Derived URL properties, empty githubUrl means use github.com; otherwise treat
+    // githubUrl as the web base URL of a GitHub Enterprise Server instance.
+    // The scheme is stripped from user input and always rebuilt as https://, so both
+    // "github.mycompany.com" and "https://github.mycompany.com" produce identical URLs.
+    readonly property string _githubHost: {
+        if (!githubUrl || githubUrl.trim() === "") return ""
+        return githubUrl.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "")
+    }
+    readonly property string githubWebUrl: _githubHost ? "https://" + _githubHost : "https://github.com"
+    readonly property string githubRestApiUrl: _githubHost ? "https://" + _githubHost + "/api/v3" : "https://api.github.com"
+    readonly property string githubGraphqlUrl: _githubHost ? "https://" + _githubHost + "/api/graphql" : "https://api.github.com/graphql"
+
     readonly property int refreshInterval: pluginApi?.pluginSettings?.refreshInterval || 1800
     readonly property int maxEvents: pluginApi?.pluginSettings?.maxEvents || 50
 
@@ -43,6 +57,20 @@ Item {
     readonly property bool showRepoCreations: pluginApi?.pluginSettings?.showRepoCreations ?? true
     readonly property bool showMyRepoStars: pluginApi?.pluginSettings?.showMyRepoStars ?? true
     readonly property bool showMyRepoForks: pluginApi?.pluginSettings?.showMyRepoForks ?? true
+    readonly property bool showNotificationBadge: pluginApi?.pluginSettings?.showNotificationBadge ?? true
+    readonly property bool colorizationEnabled: pluginApi?.pluginSettings?.colorizationEnabled ?? false
+    readonly property string colorizationIcon: pluginApi?.pluginSettings?.colorizationIcon ?? "Primary"
+    readonly property string colorizationBadge: pluginApi?.pluginSettings?.colorizationBadge ?? "Primary"
+    readonly property string colorizationBadgeText: pluginApi?.pluginSettings?.colorizationBadgeText ?? "Primary"
+    readonly property int defaultTab: pluginApi?.pluginSettings?.defaultTab ?? 0
+    readonly property bool enableSystemNotifications: pluginApi?.pluginSettings?.enableSystemNotifications ?? false
+    readonly property bool notifyGitHubNotifications: pluginApi?.pluginSettings?.notifyGitHubNotifications ?? true
+    readonly property bool notifyStars: pluginApi?.pluginSettings?.notifyStars ?? true
+    readonly property bool notifyForks: pluginApi?.pluginSettings?.notifyForks ?? true
+    readonly property bool notifyPRs: pluginApi?.pluginSettings?.notifyPRs ?? true
+    readonly property bool notifyRepoCreations: pluginApi?.pluginSettings?.notifyRepoCreations ?? true
+    readonly property bool notifyMyRepoStars: pluginApi?.pluginSettings?.notifyMyRepoStars ?? true
+    readonly property bool notifyMyRepoForks: pluginApi?.pluginSettings?.notifyMyRepoForks ?? true
 
     readonly property string cacheDir: pluginApi?.pluginDir ? pluginApi.pluginDir + "/cache" : ""
     readonly property string eventsCachePath: cacheDir + "/events.json"
@@ -51,12 +79,65 @@ Item {
     property var collectedEvents: []
     property var availableAvatars: ({})
 
+    readonly property var urlResolvers: ({
+        "PullRequest": function(url, repo, title) {
+            var match = url.match(/\/pulls\/(\d+)$/);
+            return match ? root.githubWebUrl + "/" + repo + "/pull/" + match[1] : root.githubWebUrl + "/" + repo;
+        },
+        "Issue": function(url, repo, title) {
+            var match = url.match(/\/issues\/(\d+)$/);
+            return match ? root.githubWebUrl + "/" + repo + "/issues/" + match[1] : root.githubWebUrl + "/" + repo;
+        },
+        "Release": function(url, repo, title) {
+            return root.githubWebUrl + "/" + repo + "/releases/tag/" + encodeURIComponent(title);
+        },
+        "Discussion": function(url, repo, title) {
+            var match = url.match(/\/discussions\/(\d+)$/);
+            return match ? root.githubWebUrl + "/" + repo + "/discussions/" + match[1] : root.githubWebUrl + "/" + repo + "/discussions";
+        },
+        "Default": function(url, repo, title) {
+            return url.replace(root.githubRestApiUrl + "/repos/", root.githubWebUrl + "/");
+        }
+        // FIXME: Notifications API does not include subject.url for CheckSuite events
+        //        it is unclear how to construct the check-run url from the CheckSuite notification
+    })
+
+    Component {
+        id: notificationProcessComponent
+        Process {
+            property string targetUrl: ""
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    if (this.text.trim() === "default") {
+                        Qt.openUrlExternally(targetUrl)
+                    }
+                }
+            }
+            onExited: this.destroy()
+        }
+    }
+
+    function sendSystemNotification(title, message, url) {
+        if (!root.enableSystemNotifications) return
+
+        var cmd = ["notify-send", "-a", "GitHub Feed", "--action=default=Open", "--wait", title, message]
+        var process = notificationProcessComponent.createObject(root, {
+            "command": cmd,
+            "targetUrl": url || root.githubWebUrl
+        })
+        process.running = true
+        logDebug("Sending system notification: " + title + " - " + message + " (URL: " + url + ")")
+    }
+
     property var userBatches: []
     property var batchQueue: []
     property int completedBatches: 0
     property int totalBatches: 0
     property int totalGraphQLCost: 0
     property double fetchStartTime: 0
+
+    property var seenEventIds: []
+    property var seenNotificationIds: []
 
     function filterEvents(rawList) {
         if (!rawList || rawList.length === 0) return []
@@ -131,6 +212,8 @@ Item {
             if (age < root.refreshInterval) {
                 root.rawEvents = cached.events
                 Logger.i("GitHubFeed", "Using cached data (" + cached.events.length + " events), age: " + Math.floor(age / 60) + " min")
+                populateSeenIdsFromCache()
+                fetchNotifications()
             } else {
                 Logger.i("GitHubFeed", "Cache expired, fetching fresh data")
                 if (root.username && root.token) fetchFromGitHub()
@@ -139,6 +222,17 @@ Item {
             Logger.e("GitHubFeed", "Failed to parse cache: " + e)
             if (root.username && root.token) fetchFromGitHub()
         }
+    }
+
+    function populateSeenIdsFromCache() {
+        const sync = (target, source) => {
+            if (target.length === 0) {
+                return source.map(item => item.id);
+            }
+            return target;
+        };
+        root.seenEventIds = sync(root.seenEventIds, root.rawEvents);
+        root.seenNotificationIds = sync(root.seenNotificationIds, root.notificationsList);
     }
 
     function saveToCache() {
@@ -169,7 +263,7 @@ Item {
             "curl", "-s", "--max-time", "30",
             "-H", "Authorization: Bearer " + root.token,
             "-H", "Accept: application/vnd.github.v3+json",
-            "https://api.github.com/users/" + root.username + "/following?per_page=100&page=" + page
+            root.githubRestApiUrl + "/users/" + root.username + "/following?per_page=100&page=" + page
         ] : ["echo", "[]"]
 
         stdout: StdioCollector {
@@ -286,7 +380,7 @@ Item {
             query += " nodes { nameWithOwner createdAt description parent { nameWithOwner } }"
             query += " }"
             query += " pullRequests(first: " + root.maxPRsPerUser + ", orderBy: {field: CREATED_AT, direction: DESC}, states: [OPEN, MERGED]) {"
-            query += " nodes { title createdAt state repository { nameWithOwner } }"
+            query += " nodes { title createdAt state url repository { nameWithOwner } }"
             query += " }"
             query += " }"
         }
@@ -298,7 +392,7 @@ Item {
         return [
             "curl", "-s", "--max-time", "20",
             "-X", "POST",
-            "https://api.github.com/graphql",
+            root.githubGraphqlUrl,
             "-H", "Authorization: Bearer " + root.token,
             "-H", "Content-Type: application/json",
             "-d", payload
@@ -431,7 +525,7 @@ Item {
                         actor: { login: login, avatar_url: avatarUrl },
                         repo: { name: pr.repository.nameWithOwner },
                         isFollowedUserEvent: true,
-                        payload: { action: pr.state === "MERGED" ? "merged" : "opened", pull_request: { title: pr.title } },
+                        payload: { action: pr.state === "MERGED" ? "merged" : "opened", pull_request: { title: pr.title, html_url: pr.url } },
                         description: pr.title || ""
                     })
                 })
@@ -553,7 +647,7 @@ Item {
         myReposProcess.command = [
             "curl", "-s", "--max-time", "20",
             "-X", "POST",
-            "https://api.github.com/graphql",
+            root.githubGraphqlUrl,
             "-H", "Authorization: Bearer " + root.token,
             "-H", "Content-Type: application/json",
             "-d", payload
@@ -667,6 +761,99 @@ Item {
 
         followingProcess.page = 1
         followingProcess.running = true
+        fetchNotifications()
+    }
+
+    property int notificationCount: 0
+    property var notificationsList: []
+
+    Process {
+        id: notificationsProcess
+        stdout: StdioCollector {
+            onStreamFinished: {
+                handleNotificationsResponse(this.text)
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+               if (this.text.trim().length > 0) Logger.w("GitHubFeed", "Notifications stderr: " + this.text)
+            }
+        }
+        onExited: function(exitCode, exitStatus) {
+            if (exitCode !== 0) {
+               Logger.e("GitHubFeed", "Notifications process exited with code " + exitCode)
+            }
+        }
+    }
+
+    function fetchNotifications() {
+        if (!root.username || !root.token) return
+
+        Logger.i("GitHubFeed", "Fetching notifications...")
+        notificationsProcess.command = [
+            "curl", "-s", "--max-time", "10",
+            "-H", "Authorization: Bearer " + root.token,
+            "-H", "Accept: application/vnd.github.v3+json",
+            root.githubRestApiUrl + "/notifications"
+        ]
+        notificationsProcess.running = true
+    }
+
+    function handleNotificationsResponse(response) {
+        try {
+            if (!response || response.trim() === "") {
+                return
+            }
+
+            var data = JSON.parse(response)
+            if (Array.isArray(data)) {
+                root.notificationCount = data.length
+
+                var list = []
+                data.forEach(function(n) {
+                    var type = n.subject ? n.subject.type : "Notification"
+                    var title = n.subject ? n.subject.title : ""
+                    var repo = n.repository ? n.repository.full_name : ""
+                    var url = ""
+
+                    var resolver = root.urlResolvers[type] || root.urlResolvers["Default"];
+                    if (n.subject && n.subject.url) {
+                        url = resolver(n.subject.url, repo, title);
+                    } else {
+                        url = root.githubWebUrl + "/" + repo;
+                    }
+
+                    list.push({
+                        id: n.id,
+                        title: title,
+                        type: type,
+                        repo: repo,
+                        updated_at: n.updated_at,
+                        url: url,
+                        unread: n.unread
+                    })
+                })
+
+                if (root.seenNotificationIds.length > 0) {
+                    list.forEach(function(n) {
+                        if (root.seenNotificationIds.indexOf(n.id) === -1) {
+                            if (root.notifyGitHubNotifications) {
+                                sendSystemNotification("GitHub Notification", n.repo + ": " + n.title, n.url)
+                            }
+                        }
+                    })
+                }
+
+                root.notificationsList = list
+                root.seenNotificationIds = list.map(function(n) { return n.id })
+
+                Logger.i("GitHubFeed", "Fetched " + data.length + " notifications")
+            } else {
+                Logger.e("GitHubFeed", "Failed to parse notifications: not an array. Response: " + response.substring(0, 100))
+            }
+        } catch (e) {
+            Logger.e("GitHubFeed", "Error parsing notifications: " + e)
+        }
     }
 
     function finalizeFetch() {
@@ -686,7 +873,45 @@ Item {
             }
         }
 
+        if (root.seenEventIds.length > 0) {
+            uniqueEvents.forEach(function(e) {
+                if (root.seenEventIds.indexOf(e.id) === -1) {
+                    var shouldNotify = false
+                    if (e.isMyRepoEvent) {
+                        if (e.type === "WatchEvent") shouldNotify = root.notifyMyRepoStars
+                        else if (e.type === "ForkEvent") shouldNotify = root.notifyMyRepoForks
+                    } else {
+                        switch (e.type) {
+                            case "WatchEvent": shouldNotify = root.notifyStars; break
+                            case "ForkEvent": shouldNotify = root.notifyForks; break
+                            case "PullRequestEvent": shouldNotify = root.notifyPRs; break
+                            case "CreateEvent": shouldNotify = root.notifyRepoCreations; break
+                        }
+                    }
+
+                    if (shouldNotify) {
+                        var title = "GitHub Activity"
+                        var msg = e.actor.login + " "
+                        var eventUrl = root.githubWebUrl + "/" + e.repo.name
+                        if (e.type === "WatchEvent") msg += "starred " + e.repo.name
+                        else if (e.type === "ForkEvent") {
+                            msg += "forked " + (e.payload.forkee ? e.payload.forkee.full_name : e.repo.name)
+                            if (e.payload.forkee) eventUrl = root.githubWebUrl + "/" + e.payload.forkee.full_name
+                        }
+                        else if (e.type === "PullRequestEvent") {
+                            msg += "opened/merged PR: " + e.payload.pull_request.title
+                            if (e.payload.pull_request.html_url) eventUrl = e.payload.pull_request.html_url
+                        }
+                        else if (e.type === "CreateEvent") msg += "created repo " + e.repo.name
+
+                        sendSystemNotification(title, msg, eventUrl)
+                    }
+                }
+            })
+        }
+
         root.rawEvents = uniqueEvents
+        root.seenEventIds = uniqueEvents.map(function(e) { return e.id })
         root.lastFetchTimestamp = Math.floor(Date.now() / 1000)
         root.isLoading = false
         root.hasError = false
@@ -850,6 +1075,7 @@ Item {
 
     Component.onCompleted: {
         Logger.i("GitHubFeed", "Plugin initialized (parallel GraphQL fetching)")
+        populateSeenIdsFromCache()
 
         if (!root.username) {
             Logger.w("GitHubFeed", "No username configured")
@@ -924,6 +1150,16 @@ Item {
     onUsernameChanged: {
         if (root.username && root.token) {
             Logger.i("GitHubFeed", "Username changed, fetching new data")
+            root.rawEvents = []
+            root.followingList = []
+            root.lastFetchTimestamp = 0
+            fetchFromGitHub()
+        }
+    }
+
+    onGithubUrlChanged: {
+        if (root.username && root.token) {
+            Logger.i("GitHubFeed", "GitHub URL changed to: " + (root.githubWebUrl))
             root.rawEvents = []
             root.followingList = []
             root.lastFetchTimestamp = 0
