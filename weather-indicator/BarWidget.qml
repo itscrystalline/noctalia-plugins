@@ -18,11 +18,16 @@ Item {
   property string widgetId: ""
   property string section: ""
 
+  // Get Settings and defaultSettings
+   property var cfg: pluginApi?.pluginSettings || ({})
+   property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
+
   // Get settings or use false
-  readonly property bool showTempValue: pluginApi?.pluginSettings?.showTempValue ?? true
-  readonly property bool showConditionIcon: pluginApi?.pluginSettings?.showConditionIcon ?? true
-  readonly property bool showTempUnit: pluginApi?.pluginSettings?.showTempUnit ?? true
-  readonly property string tooltipOption: pluginApi?.pluginSettings?.tooltipOption || pluginApi?.manifest?.defaultSettings?.tooltipOption || "all"
+  readonly property string customColor: cfg.customColor ?? defaults.customColor
+  readonly property bool showTempValue: cfg.showTempValue ?? defaults.showTempValue
+  readonly property bool showConditionIcon: cfg.showConditionIcon ?? defaults.customColor
+  readonly property bool showTempUnit: cfg.showTempUnit ?? defaults.showTempUnit
+  readonly property string tooltipOption: cfg.tooltipOption || defaults.tooltipOption
 
   // Bar positioning properties
   readonly property string screenName: screen ? screen.name : ""
@@ -34,6 +39,7 @@ Item {
 
   readonly property real contentWidth: isVertical ? root.barHeight - Style.marginL : layout.implicitWidth + Style.marginM * 2
   readonly property real contentHeight: isVertical ? layout.implicitHeight + Style.marginS * 2 : root.capsuleHeight
+  readonly property color contentColor: mouseArea.containsMouse ? Color.mOnHover : Color.resolveColorKey(customColor)
 
   visible: root.weatherReady
   opacity: root.weatherReady ? 1.0 : 0.0
@@ -47,8 +53,8 @@ Item {
     y: Style.pixelAlignCenter(parent.height, height)
     width: root.contentWidth
     height: root.contentHeight
-    color:  Style.capsuleColor
-    radius: !isVertical ? Style.radiusM : width * 0.5
+    color: mouseArea.containsMouse ? Color.mHover : Style.capsuleColor
+    radius: Style.radiusL
     border.color: Style.capsuleBorderColor
     border.width: Style.capsuleBorderWidth
 
@@ -67,14 +73,16 @@ Item {
 
         NIcon {
           visible: root.showConditionIcon
-          Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+          anchors.verticalCenter: parent.verticalTop
+
           icon: weatherReady ? LocationService.weatherSymbolFromCode(LocationService.data.weather.current_weather.weathercode, LocationService.data.weather.current_weather.is_day) : "weather-cloud-off"
-          applyUiScale: false
-          color: Color.mOnSurface
+          applyUiScale: true
+          color: contentColor
         }
 
         NText {
           visible: root.showTempValue
+          anchors.verticalCenter: parent.verticalBottom
           text: {
             if (!weatherReady || !root.showTempValue) {
               return "";
@@ -91,7 +99,7 @@ Item {
             }
             return `${temp}${suffix}`;
           }
-          color: Color.mOnSurface
+          color: contentColor
           pointSize: root.barFontSize
           applyUiScale: false
         }
@@ -119,7 +127,8 @@ MouseArea {
     onClicked: function (mouse) {
       if (mouse.button === Qt.LeftButton) {
         if (pluginApi) {
-          PanelService.getPanel("clockPanel", screen)?.toggle(root);
+            pluginApi.openPanel(root.screen, root);
+          //PanelService.getPanel("clockPanel", screen)?.toggle(root);
         }
       } else if (mouse.button === Qt.RightButton) {
         PanelService.showContextMenu(contextMenu, root, screen);
@@ -132,7 +141,7 @@ MouseArea {
 
     model: [
       {
-        "label": pluginApi?.tr("menu.openPanel") || "Open Calendar",
+        "label": pluginApi?.tr("menu.openPanel") || "Open Weather",
         "action": "open",
         "icon": "calendar"
       },
@@ -192,9 +201,9 @@ function buildSunriseSunset() {
     var riseDate = new Date(LocationService.data.weather.daily.sunrise[0])
     var setDate  = new Date(LocationService.data.weather.daily.sunset[0])
 
-    var options = { hour: '2-digit', minute: '2-digit' };
-    var rise = riseDate.toLocaleTimeString(undefined, options);
-    var set  = setDate.toLocaleTimeString(undefined, options);
+    const timeFormat = Settings.data.location.use12hourFormat ? "hh:mm AP" : "HH:mm";
+    const rise = I18n.locale.toString(riseDate, timeFormat);
+    const set = I18n.locale.toString(setDate, timeFormat);
 
     rows.push([("Sunrise"), rise]);
     rows.push([("Sunset"), set]);
