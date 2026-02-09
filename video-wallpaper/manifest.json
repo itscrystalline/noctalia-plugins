@@ -1,13 +1,18 @@
 {
   "id": "video-wallpaper",
   "name": "Video Wallpaper",
-  "version": "1.1.3",
+  "version": "2.0.7",
   "minNoctaliaVersion": "3.6.0",
-  "author": "Spyridon Siarapis",
+  "author": "spiros132",
   "license": "MIT",
   "repository": "https://github.com/noctalia-dev/noctalia-plugins",
-  "description": "A plugin that uses QtMultimedia to play videos as your wallpaper.",
-  "tags": ["Bar", "Panel", "Fun", "System"],
+  "description": "A plugin that uses a backend renderer to play videos as your wallpaper.",
+  "tags": [
+    "Bar",
+    "Panel",
+    "Fun",
+    "System"
+  ],
   "entryPoints": {
     "main": "Main.qml",
     "barWidget": "BarWidget.qml",
@@ -18,6 +23,15 @@
     "plugins": []
   },
   "metadata": {
-    "defaultSettings": {}
+    "defaultSettings": {
+      "activeBackend": "qt6-multimedia",
+      "automationMode": "random",
+      "automationTime": 300,
+      "fillMode": "fit",
+      "mpvSocket": "/tmp/mpv-socket",
+      "profile": "default",
+      "volume": 1.0,
+      "wallpapersFolder": "~/Pictures/Wallpapers"
+    }
   }
 }

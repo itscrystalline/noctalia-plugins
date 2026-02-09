@@ -13,13 +13,13 @@ Item {
     /***************************
     * PROPERTIES
     ***************************/
-    readonly property bool      automation:         pluginApi.pluginSettings.automation         || false
-    readonly property string    automationMode:     pluginApi.pluginSettings.automationMode     || "random"
-    readonly property real      automationTime:     pluginApi.pluginSettings.automationTime     || 5 * 60
-    
-    required property var random
-    required property var nextWallpaper
+    readonly property bool   automation:      pluginApi?.pluginSettings?.automation      ?? false
+    readonly property string automationMode:  pluginApi?.pluginSettings?.automationMode  ?? pluginApi?.manifest?.metadata?.defaultSettings?.automationMode ?? ""
+    readonly property real   automationTime:  pluginApi?.pluginSettings?.automationTime  ?? pluginApi?.manifest?.metadata?.defaultSettings?.automationTime ?? 0
+    readonly property bool   monitorSpecific: pluginApi?.pluginSettings?.monitorSpecific ?? false
 
+    signal random(screenName: var)
+    signal nextWallpaper(screenName: var)
 
     /***************************
     * EVENTS
@@ -48,16 +48,28 @@ Item {
     ***************************/
     Timer {
         id: timer
-        interval: automationTime * 1000
+        interval: root.automationTime * 1000
         repeat: true
 
         onTriggered: {
             switch(root.automationMode) {
                 case "random":
-                    root.random();
+                    if(root.monitorSpecific) {
+                        for(const screen of Quickshell.screens) {
+                            root.random(screen.name);
+                        }
+                    } else {
+                        root.random(undefined);
+                    }
                     break;
                 case "alphabetically":
-                    root.nextWallpaper();
+                    if(root.monitorSpecific) {
+                        for(const screen of Quickshell.screens) {
+                            root.nextWallpaper(screen.name);
+                        }
+                    } else {
+                        root.nextWallpaper(undefined);
+                    }
                     break;
             }
         }

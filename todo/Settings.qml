@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
+import qs.Services.UI
 import qs.Widgets
 
 ColumnLayout {
@@ -13,11 +14,18 @@ ColumnLayout {
   property bool valueShowBackground: pluginApi?.pluginSettings?.showBackground !== undefined ? pluginApi.pluginSettings.showBackground : pluginApi?.manifest?.metadata?.defaultSettings?.showBackground
 
   // Priority color properties
-  property bool valueUseCustomColors: pluginApi?.pluginSettings?.useCustomColors !== undefined ? pluginApi.pluginSettings.useCustomColors : false
+  property bool valueUseCustomColors: pluginApi?.pluginSettings?.useCustomColors !== undefined ? pluginApi.pluginSettings.useCustomColors : pluginApi?.manifest?.metadata?.defaultSettings?.useCustomColors
   property color valueHighPriorityColor: (pluginApi?.pluginSettings?.priorityColors?.high) || (pluginApi?.manifest?.metadata?.defaultSettings?.priorityColors?.high) || Color.mError.toString()
   property color valueMediumPriorityColor: (pluginApi?.pluginSettings?.priorityColors?.medium) || (pluginApi?.manifest?.metadata?.defaultSettings?.priorityColors?.medium) || Color.mPrimary.toString()
   property color valueLowPriorityColor: (pluginApi?.pluginSettings?.priorityColors?.low) || (pluginApi?.manifest?.metadata?.defaultSettings?.priorityColors?.low) || Color.mOnSurfaceVariant.toString()
 
+  // Export path property
+  property string valueExportPath: pluginApi?.pluginSettings?.exportPath !== undefined ? pluginApi?.pluginSettings?.exportPath : pluginApi?.manifest?.metadata?.defaultSettings?.exportPath
+  property string valueExportFormat: pluginApi?.pluginSettings?.exportFormat !== undefined ? pluginApi?.pluginSettings?.exportFormat : pluginApi?.manifest?.metadata?.defaultSettings?.exportFormat
+  property bool valueExportEmptySections: pluginApi?.pluginSettings?.exportEmptySections !== undefined ? pluginApi.pluginSettings.exportEmptySections : pluginApi?.manifest?.metadata?.defaultSettings?.exportEmptySections
+
+  // Reference to Main.qml instance for centralized data management
+  readonly property var mainInstance: pluginApi?.mainInstance
 
   spacing: Style.marginL
 
@@ -125,6 +133,74 @@ ColumnLayout {
     }
   }
 
+  // Export path setting
+  NTextInputButton {
+    Layout.fillWidth: true
+    label: pluginApi.tr("settings.export_path.label")
+    description: pluginApi.tr("settings.export_path.description")
+    placeholderText: pluginApi.tr("settings.export_path.placeholder")
+    text: root.valueExportPath
+    buttonIcon: "folder-open"
+    buttonTooltip: pluginApi.tr("settings.export_path.select_folder")
+    onInputEditingFinished: root.valueExportPath = text
+    onButtonClicked: folderPicker.openFilePicker()
+  }
+
+  // Export format setting
+  NComboBox {
+    Layout.fillWidth: true
+    label: pluginApi.tr("settings.export_format.label")
+    description: pluginApi.tr("settings.export_format.description")
+    model: [
+      {
+        key: "markdown",
+        name: pluginApi.tr("settings.export_format.markdown")
+      },
+      {
+        key: "json",
+        name: pluginApi.tr("settings.export_format.json")
+      }
+    ]
+    currentKey: root.valueExportFormat
+    onSelected: function (key) {
+      root.valueExportFormat = key;
+      if (mainInstance && mainInstance.pluginApi) {
+        mainInstance.pluginApi.pluginSettings.exportFormat = key;
+        mainInstance.pluginApi.saveSettings();
+      }
+    }
+  }
+
+  // Export empty sections setting
+  NToggle {
+    Layout.fillWidth: true
+    label: pluginApi.tr("settings.export_empty_sections.label")
+    description: pluginApi.tr("settings.export_empty_sections.description")
+    checked: root.valueExportEmptySections
+    onToggled: function (checked) {
+      root.valueExportEmptySections = checked;
+      if (mainInstance && mainInstance.pluginApi) {
+        mainInstance.pluginApi.pluginSettings.exportEmptySections = checked;
+        mainInstance.pluginApi.saveSettings();
+      }
+    }
+  }
+
+  // Folder picker for selecting export path
+  NFilePicker {
+    id: folderPicker
+    selectionMode: "folders"
+    title: pluginApi.tr("settings.export_path.label")
+    initialPath: root.valueExportPath
+    onAccepted: function (paths) {
+      if (paths.length > 0) {
+        root.valueExportPath = paths[0];
+        mainInstance.pluginApi.pluginSettings.exportPath = paths[0];
+        mainInstance.pluginApi.saveSettings();
+      }
+    }
+  }
+
   // Section for managing pages
   ColumnLayout {
     Layout.fillWidth: true
@@ -208,11 +284,10 @@ ColumnLayout {
                   return;
                 }
 
-                // If we get here, the name is valid and different from the original
-                var pages = pluginApi.pluginSettings.pages || [];
-                pages[index].name = newName;
-                pluginApi.pluginSettings.pages = pages;
-                pluginApi.saveSettings();
+                // Use mainInstance to rename page
+                if (mainInstance) {
+                  mainInstance.renamePageInternal(modelData.id, newName);
+                }
 
                 originalName = newName;
                 editing = false;
@@ -262,10 +337,15 @@ ColumnLayout {
                       icon: "trash"
                       tooltipText: pluginApi?.tr("settings.pages.delete_button_tooltip")
                       colorFg: Color.mError
-                      enabled: (pluginApi?.pluginSettings?.pages?.length || 0) > 1
+                      enabled: (pluginApi?.pluginSettings?.pages?.length || 0) > 1 && modelData.id !== 0
                       onClicked: {
                         if ((pluginApi?.pluginSettings?.pages?.length || 0) <= 1) {
                           ToastService.showError(pluginApi?.tr("settings.pages.cannot_delete_last"));
+                          return;
+                        }
+
+                        if (modelData.id === 0) {
+                          ToastService.showError(pluginApi?.tr("settings.pages.cannot_delete_default"));
                           return;
                         }
 
@@ -325,22 +405,6 @@ ColumnLayout {
     }
   }
 
-  // Helper functions for page management
-  function getNextPageId() {
-    var pages = pluginApi?.pluginSettings?.pages || [];
-    if (pages.length === 0) {
-      return 0;
-    }
-
-    var maxId = -1;
-    for (var i = 0; i < pages.length; i++) {
-      if (pages[i].id > maxId) {
-        maxId = pages[i].id;
-      }
-    }
-    return maxId + 1;
-  }
-
   function isPageNameUnique(name, excludeIndex) {
     var pages = pluginApi?.pluginSettings?.pages || [];
     var lowerName = name.toLowerCase().trim();
@@ -351,7 +415,6 @@ ColumnLayout {
     }
     return true;
   }
-
 
   function addPage() {
     var name = newPageInput.text.trim();
@@ -366,15 +429,10 @@ ColumnLayout {
       return;
     }
 
-    var newPage = {
-      id: getNextPageId(),
-      name: name
-    };
-
-    var pages = pluginApi.pluginSettings?.pages || [];
-    pages.push(newPage);
-    pluginApi.pluginSettings.pages = pages;
-    pluginApi.saveSettings();
+    // Use mainInstance to create page
+    if (mainInstance) {
+      mainInstance.createPage(name);
+    }
 
     newPageInput.text = "";
     newPageInput.forceActiveFocus();
@@ -450,50 +508,25 @@ ColumnLayout {
     if (pageIdx < 0)
       return;
 
-    var pages = pluginApi.pluginSettings.pages || [];
+    var pages = pluginApi?.pluginSettings?.pages || [];
+
+    // Prevent deleting default page (id: 0)
+    if (pages[pageIdx].id === 0) {
+      ToastService.showError(pluginApi?.tr("settings.pages.cannot_delete_default"));
+      return;
+    }
+
     if (pages.length <= 1) {
       ToastService.showError(pluginApi?.tr("settings.pages.cannot_delete_last"));
       return;
     }
 
     var pageToDeleteId = pages[pageIdx].id;
-    var todos = pluginApi.pluginSettings.todos || [];
-    var firstPageId = pages[0].id;
 
-    // Transfer todos from the page being deleted to the first page
-    for (var i = 0; i < todos.length; i++) {
-      if (todos[i].pageId === pageToDeleteId) {
-        // Move todo to the first page
-        todos[i].pageId = firstPageId;
-      }
+    // Use mainInstance to delete page (handles todos migration and current_page_id update)
+    if (mainInstance) {
+      mainInstance.deletePage(pageToDeleteId);
     }
-
-    // Remove the page from the pages array
-    pages.splice(pageIdx, 1);
-
-    // If deleting the current page, switch to the first page
-    if (pageToDeleteId === pluginApi.pluginSettings.current_page_id) {
-      if (pages.length > 0) {
-        pluginApi.pluginSettings.current_page_id = pages[0].id;
-      } else {
-        // If this was the last page, create a default page
-        var defaultPage = {
-          id: 0,
-          name: "General"
-        };
-        pages.push(defaultPage);
-        pluginApi.pluginSettings.current_page_id = 0;
-      }
-    }
-
-    // Update IDs to be sequential after deletion
-    for (var i = 0; i < pages.length; i++) {
-      pages[i].id = i;
-    }
-
-    pluginApi.pluginSettings.pages = pages;
-    pluginApi.pluginSettings.todos = todos;
-    pluginApi.saveSettings();
   }
 
   function saveSettings() {
